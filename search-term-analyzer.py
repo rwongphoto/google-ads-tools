@@ -36,7 +36,7 @@ def google_ads_search_term_analyzer():
                 return
 
             # Convert numeric columns.
-            for col in ["Clicks", "Impressions", "Cost", "Conversions"]:
+            for col in ["Clicks", "Impr.", "Cost", "Conversions"]:
                 try:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 except KeyError:
@@ -111,7 +111,7 @@ def google_ads_search_term_analyzer():
                                 "Conversions": 0
                             }
                         ngram_performance[ngram]["Clicks"] += row["Clicks"]
-                        ngram_performance[ngram]["Impressions"] += row["Impressions"]
+                        ngram_performance[ngram]["Impr."] += row["Impr."]
                         ngram_performance[ngram]["Cost"] += row["Cost"]
                         ngram_performance[ngram]["Conversions"] += row["Conversions"]
 
