@@ -13,6 +13,8 @@ nltk.download('stopwords')
 nltk.download('wordnet')
 
 def google_ads_search_term_analyzer():
+    st.set_page_config(page_title="Google Ads Search Term Analyzer", layout="wide")
+    st.title("Google Ads Search Term Analyzer")
     st.header("Google Ads Search Term Analyzer")
     st.markdown(
         """
