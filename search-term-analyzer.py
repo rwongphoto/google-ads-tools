@@ -106,7 +106,7 @@ def google_ads_search_term_analyzer():
                         if ngram not in ngram_performance:
                             ngram_performance[ngram] = {
                                 "Clicks": 0,
-                                "Impressions": 0,
+                                "Impr.": 0,
                                 "Cost": 0,
                                 "Conversions": 0
                             }
@@ -116,7 +116,7 @@ def google_ads_search_term_analyzer():
                         ngram_performance[ngram]["Conversions"] += row["Conversions"]
 
             df_ngram_performance = pd.DataFrame.from_dict(ngram_performance, orient='index').reset_index().rename(columns={"index": "N-gram"})
-            df_ngram_performance["CTR"] = (df_ngram_performance["Clicks"] / df_ngram_performance["Impressions"]) * 100
+            df_ngram_performance["CTR"] = (df_ngram_performance["Clicks"] / df_ngram_performance["Impr."]) * 100
             df_ngram_performance["Conversion Rate"] = (df_ngram_performance["Conversions"] / df_ngram_performance["Clicks"]) * 100
             df_ngram_performance["Cost per Conversion"] = df_ngram_performance.apply(
                 lambda row: "None" if row["Conversions"] == 0 else row["Cost"] / row["Conversions"], axis=1
@@ -149,3 +149,4 @@ if __name__ == "__main__":
     google_ads_search_term_analyzer()
     st.markdown("---")
     st.markdown("Created by [The SEO Consultant.ai](https://theseoconsultant.ai/)", unsafe_allow_html=True)
+
