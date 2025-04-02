@@ -6,8 +6,9 @@ from nltk.stem import WordNetLemmatizer
 from nltk.corpus import stopwords
 from collections import Counter
 
-# Download necessary NLTK data
+# Download necessary NLTK data, including punkt_tab
 nltk.download('punkt')
+nltk.download('punkt_tab')
 nltk.download('stopwords')
 nltk.download('wordnet')
 
@@ -149,4 +150,5 @@ if __name__ == "__main__":
     google_ads_search_term_analyzer()
     st.markdown("---")
     st.markdown("Created by [The SEO Consultant.ai](https://theseoconsultant.ai/)", unsafe_allow_html=True)
+
 
