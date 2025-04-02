@@ -29,7 +29,7 @@ def google_ads_search_term_analyzer():
             df = pd.read_excel(uploaded_file, skiprows=2)
 
             # Check for required columns.
-            required_columns = ["Search term", "Clicks", "Impressions", "Cost", "Conversions"]
+            required_columns = ["Search term", "Clicks", "Impr.", "Cost", "Conversions"]
             missing_cols = [col for col in required_columns if col not in df.columns]
             if missing_cols:
                 st.error(f"The following required columns are missing: {', '.join(missing_cols)}")
