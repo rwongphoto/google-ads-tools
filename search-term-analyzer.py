@@ -237,6 +237,12 @@ def google_ads_search_term_analyzer():
                 n_value = st.selectbox("N-gram Size:", options=[1, 2, 3, 4], index=1)
             with col2:
                 min_frequency = st.number_input("Minimum Frequency:", value=2, min_value=1)
+            
+            if extraction_method == "Skip-grams":
+                max_skip = st.slider("Max Skip Distance:", min_value=1, max_value=2, value=1, 
+                                    help="How many words can be skipped between n-gram terms. Higher = more patterns but slower.")
+            else:
+                max_skip = 0
 
             # Initialize stopwords and lemmatizer
             stop_words = set(stopwords.words('english'))
@@ -249,35 +255,40 @@ def google_ads_search_term_analyzer():
                 ngrams_list = list(nltk.ngrams(tokens, n))
                 return [" ".join(gram) for gram in ngrams_list]
 
-            def extract_skipgrams(text, n, max_skip=2):
-                import itertools
+            def extract_skipgrams(text, n, max_skip=1):
+                """Extract skip-grams allowing gaps between words"""
+                from itertools import combinations
                 text = str(text).lower()
                 tokens = word_tokenize(text)
                 tokens = [lemmatizer.lemmatize(t) for t in tokens if t.isalnum() and t not in stop_words]
                 
-                # Limit token length to prevent exponential explosion
-                if len(tokens) < n or len(tokens) > 15:
+                if len(tokens) < n:
                     return []
                 
                 skipgrams_list = []
-                # Use limited skip-grams instead of all combinations
-                # This generates n-grams with gaps up to max_skip between words
-                for i in range(len(tokens) - n + 1):
-                    # Generate skip-grams starting from position i
-                    indices = [i]
-                    for j in range(1, n):
-                        # Allow skipping up to max_skip tokens
-                        for skip in range(1, max_skip + 2):
-                            next_idx = indices[-1] + skip
-                            if next_idx < len(tokens):
-                                current_indices = indices + [next_idx]
-                                if len(current_indices) == n:
-                                    skipgram = " ".join(tokens[idx] for idx in current_indices)
-                                    if skipgram not in skipgrams_list:
-                                        skipgrams_list.append(skipgram)
-                                        break
+                # Slide a window and extract combinations within max_skip distance
+                window_size = n + max_skip * (n - 1)  # Max span of n words with gaps
                 
-                return skipgrams_list[:100]  # Limit to 100 skip-grams per term
+                for i in range(len(tokens) - n + 1):
+                    window_end = min(i + window_size, len(tokens))
+                    window_tokens = tokens[i:window_end]
+                    
+                    if len(window_tokens) >= n:
+                        # Get all combinations of n words from window
+                        for combo_indices in combinations(range(len(window_tokens)), n):
+                            # Check if gaps are within max_skip
+                            valid = True
+                            for j in range(len(combo_indices) - 1):
+                                gap = combo_indices[j+1] - combo_indices[j] - 1
+                                if gap > max_skip:
+                                    valid = False
+                                    break
+                            
+                            if valid:
+                                skipgram = " ".join(window_tokens[idx] for idx in combo_indices)
+                                skipgrams_list.append(skipgram)
+                
+                return list(set(skipgrams_list))  # Remove duplicates
 
             # Extract n-grams
             try:
@@ -292,7 +303,7 @@ def google_ads_search_term_analyzer():
                         if extraction_method == "Contiguous n-grams":
                             all_ngrams.extend(extract_ngrams(term, n_value))
                         else:
-                            all_ngrams.extend(extract_skipgrams(term, n_value))
+                            all_ngrams.extend(extract_skipgrams(term, n_value, max_skip))
                         
                         # Update progress every 100 rows
                         if idx % 100 == 0:
@@ -307,7 +318,7 @@ def google_ads_search_term_analyzer():
                         if extraction_method == "Contiguous n-grams":
                             all_ngrams.extend(extract_ngrams(term, n_value))
                         else:
-                            all_ngrams.extend(extract_skipgrams(term, n_value))
+                            all_ngrams.extend(extract_skipgrams(term, n_value, max_skip))
             except Exception as e:
                 st.error(f"Error during n-gram extraction: {str(e)}")
                 st.info("Try using 'Contiguous n-grams' instead, or reduce your dataset size with filters.")
@@ -319,6 +330,42 @@ def google_ads_search_term_analyzer():
             if not filtered_ngrams:
                 st.warning("No n-grams found with the specified minimum frequency.")
                 return
+            
+            # Show diagnostic info
+            st.info(f"""
+            **Extraction Results:**
+            - Total n-grams extracted: {len(all_ngrams):,}
+            - Unique n-grams: {len(ngram_counts):,}
+            - N-grams meeting min frequency ({min_frequency}): {len(filtered_ngrams):,}
+            """)
+            
+            # Show examples
+            if extraction_method == "Skip-grams":
+                st.write("**Skip-gram Examples:**")
+                example_ngrams = list(filtered_ngrams.keys())[:10]
+                for ng in example_ngrams:
+                    st.code(ng)
+                
+                # Test on a sample search term to verify skip-grams work
+                if len(filtered_df) > 0:
+                    sample_term = filtered_df.iloc[0]["Search term"]
+                    st.write(f"\n**Test on sample term:** '{sample_term}'")
+                    contiguous_test = extract_ngrams(sample_term, n_value)
+                    skipgram_test = extract_skipgrams(sample_term, n_value, max_skip)
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write("**Contiguous n-grams:**")
+                        for ng in contiguous_test:
+                            st.code(ng)
+                    with col2:
+                        st.write("**Skip-grams:**")
+                        for ng in skipgram_test:
+                            # Highlight if not in contiguous
+                            if ng not in contiguous_test:
+                                st.code(f"🔸 {ng}  ← NEW")
+                            else:
+                                st.code(ng)
 
             # Map search terms to n-grams
             search_term_to_ngrams = {}
@@ -326,7 +373,7 @@ def google_ads_search_term_analyzer():
                 if extraction_method == "Contiguous n-grams":
                     search_term_to_ngrams[term] = extract_ngrams(term, n_value)
                 else:
-                    search_term_to_ngrams[term] = extract_skipgrams(term, n_value)
+                    search_term_to_ngrams[term] = extract_skipgrams(term, n_value, max_skip)
 
             # Calculate performance metrics per n-gram
             ngram_performance = {}
