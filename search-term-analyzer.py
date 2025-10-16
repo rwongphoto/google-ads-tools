@@ -78,6 +78,9 @@ def google_ads_search_term_analyzer():
         """
         Upload a CSV file from your Google Ads search terms report and analyze it with e-commerce-specific metrics.
         This tool provides insights into ROAS, AOV, product categories, and keyword performance.
+        
+        **Required columns:** Search term, Clicks, Impr., Cost  
+        **Optional columns:** Conversions, Conv. value (enables ROAS/AOV metrics)
         """
     )
 
@@ -104,50 +107,94 @@ def google_ads_search_term_analyzer():
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
+            # Check which optional columns are available
+            has_conversions = 'Conversions' in df.columns
+            has_conv_value = 'Conv. value' in df.columns
+            
+            # Show what metrics are available
+            if has_conv_value:
+                st.success("✅ Full e-commerce metrics available (ROAS, AOV, CPA)")
+            elif has_conversions:
+                st.info("ℹ️ Conversions tracked - showing CPA and Conv. Rate (add 'Conv. value' column for ROAS/AOV)")
+            else:
+                st.warning("⚠️ Basic metrics only - add 'Conversions' and 'Conv. value' columns for e-commerce metrics")
+            
             # Calculate derived metrics
             df['CTR'] = (df['Clicks'] / df['Impr.'].replace(0, 1)) * 100
             
-            if 'Conversions' in df.columns and 'Conv. value' in df.columns:
+            if has_conversions and has_conv_value:
                 df['CPA'] = df.apply(lambda row: row['Cost'] / row['Conversions'] if row['Conversions'] > 0 else 0, axis=1)
                 df['AOV'] = df.apply(lambda row: row['Conv. value'] / row['Conversions'] if row['Conversions'] > 0 else 0, axis=1)
                 df['ROAS'] = df.apply(lambda row: row['Conv. value'] / row['Cost'] if row['Cost'] > 0 else 0, axis=1)
                 df['Conv. Rate'] = (df['Conversions'] / df['Clicks'].replace(0, 1)) * 100
+            elif has_conversions:
+                # Only conversions available, no revenue data
+                df['CPA'] = df.apply(lambda row: row['Cost'] / row['Conversions'] if row['Conversions'] > 0 else 0, axis=1)
+                df['Conv. Rate'] = (df['Conversions'] / df['Clicks'].replace(0, 1)) * 100
 
             # Display overall metrics
             st.subheader("📊 Overall Performance Metrics")
-            col1, col2, col3, col4, col5 = st.columns(5)
             
-            with col1:
-                st.metric("Total Clicks", f"{int(df['Clicks'].sum()):,}")
-            with col2:
-                st.metric("Total Cost", f"${df['Cost'].sum():,.2f}")
-            with col3:
-                if 'Conversions' in df.columns:
+            if has_conv_value:
+                # Full e-commerce metrics available
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("Total Clicks", f"{int(df['Clicks'].sum()):,}")
+                with col2:
+                    st.metric("Total Cost", f"${df['Cost'].sum():,.2f}")
+                with col3:
                     st.metric("Total Conversions", f"{int(df['Conversions'].sum()):,}")
-            with col4:
-                if 'Conv. value' in df.columns:
+                with col4:
                     st.metric("Total Revenue", f"${df['Conv. value'].sum():,.2f}")
-            with col5:
-                if 'Conv. value' in df.columns and df['Cost'].sum() > 0:
-                    overall_roas = df['Conv. value'].sum() / df['Cost'].sum()
+                with col5:
+                    overall_roas = df['Conv. value'].sum() / df['Cost'].sum() if df['Cost'].sum() > 0 else 0
                     st.metric("Overall ROAS", f"{overall_roas:.2f}x")
+            elif has_conversions:
+                # Only conversions available
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Clicks", f"{int(df['Clicks'].sum()):,}")
+                with col2:
+                    st.metric("Total Cost", f"${df['Cost'].sum():,.2f}")
+                with col3:
+                    st.metric("Total Conversions", f"{int(df['Conversions'].sum()):,}")
+                with col4:
+                    avg_cpa = df['Cost'].sum() / df['Conversions'].sum() if df['Conversions'].sum() > 0 else 0
+                    st.metric("Avg CPA", f"${avg_cpa:.2f}")
+            else:
+                # Basic metrics only
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Clicks", f"{int(df['Clicks'].sum()):,}")
+                with col2:
+                    st.metric("Total Impressions", f"{int(df['Impr.'].sum()):,}")
+                with col3:
+                    st.metric("Total Cost", f"${df['Cost'].sum():,.2f}")
 
             # Add filters
             st.subheader("🔍 Filter Options")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                min_clicks = st.number_input("Min Clicks", value=0, min_value=0)
-            with col2:
-                min_conversions = st.number_input("Min Conversions", value=0, min_value=0)
-            with col3:
-                min_cost = st.number_input("Min Cost ($)", value=0.0, min_value=0.0, step=0.1)
+            if has_conversions:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    min_clicks = st.number_input("Min Clicks", value=0, min_value=0)
+                with col2:
+                    min_conversions = st.number_input("Min Conversions", value=0, min_value=0)
+                with col3:
+                    min_cost = st.number_input("Min Cost ($)", value=0.0, min_value=0.0, step=0.1)
+            else:
+                col1, col2 = st.columns(2)
+                with col1:
+                    min_clicks = st.number_input("Min Clicks", value=0, min_value=0)
+                with col2:
+                    min_cost = st.number_input("Min Cost ($)", value=0.0, min_value=0.0, step=0.1)
+                min_conversions = 0
 
             # Apply filters
-            filtered_df = df[
-                (df['Clicks'] >= min_clicks) & 
-                (df.get('Conversions', 0) >= min_conversions) &
-                (df['Cost'] >= min_cost)
-            ].copy()
+            filter_conditions = (df['Clicks'] >= min_clicks) & (df['Cost'] >= min_cost)
+            if has_conversions:
+                filter_conditions = filter_conditions & (df['Conversions'] >= min_conversions)
+            
+            filtered_df = df[filter_conditions].copy()
 
             st.info(f"Showing {len(filtered_df):,} of {len(df):,} search terms after filtering")
 
@@ -243,9 +290,9 @@ def google_ads_search_term_analyzer():
                         ngram_performance[ngram]["Clicks"] += row["Clicks"]
                         ngram_performance[ngram]["Impr."] += row["Impr."]
                         ngram_performance[ngram]["Cost"] += row["Cost"]
-                        if 'Conversions' in filtered_df.columns:
+                        if has_conversions:
                             ngram_performance[ngram]["Conversions"] += row["Conversions"]
-                        if 'Conv. value' in filtered_df.columns:
+                        if has_conv_value:
                             ngram_performance[ngram]["Conv. value"] += row["Conv. value"]
 
             df_ngram_performance = pd.DataFrame.from_dict(ngram_performance, orient='index').reset_index()
@@ -254,20 +301,34 @@ def google_ads_search_term_analyzer():
             # Calculate e-commerce metrics
             df_ngram_performance["CTR"] = (df_ngram_performance["Clicks"] / df_ngram_performance["Impr."].replace(0, 1)) * 100
             
-            if 'Conversions' in df_ngram_performance.columns:
+            if has_conversions:
                 df_ngram_performance["Conv. Rate"] = (df_ngram_performance["Conversions"] / df_ngram_performance["Clicks"].replace(0, 1)) * 100
                 df_ngram_performance["CPA"] = df_ngram_performance.apply(
                     lambda row: row["Cost"] / row["Conversions"] if row["Conversions"] > 0 else None, axis=1)
             
-            if 'Conv. value' in df_ngram_performance.columns:
+            if has_conv_value:
                 df_ngram_performance["AOV"] = df_ngram_performance.apply(
                     lambda row: row["Conv. value"] / row["Conversions"] if row["Conversions"] > 0 else None, axis=1)
                 df_ngram_performance["ROAS"] = df_ngram_performance.apply(
                     lambda row: row["Conv. value"] / row["Cost"] if row["Cost"] > 0 else None, axis=1)
                 df_ngram_performance["Revenue"] = df_ngram_performance["Conv. value"]
+            
+            # Remove Conv. value column if we have Revenue
+            if has_conv_value:
+                df_ngram_performance = df_ngram_performance.drop(columns=['Conv. value'])
+            
+            # Remove Conversions column with 0 if no conversions tracked
+            if not has_conversions:
+                df_ngram_performance = df_ngram_performance.drop(columns=['Conversions'])
 
             # Sorting options
-            default_sort = "Revenue" if "Revenue" in df_ngram_performance.columns else "Clicks"
+            if has_conv_value and "Revenue" in df_ngram_performance.columns:
+                default_sort = "Revenue"
+            elif has_conversions and "Conversions" in df_ngram_performance.columns:
+                default_sort = "Conversions"
+            else:
+                default_sort = "Clicks"
+            
             sort_column = st.selectbox("Sort by:", 
                                       options=df_ngram_performance.columns.tolist(),
                                       index=list(df_ngram_performance.columns).index(default_sort))
@@ -281,14 +342,16 @@ def google_ads_search_term_analyzer():
 
             # Format and display
             format_dict = {
+                "Clicks": "{:,.0f}",
+                "Impr.": "{:,.0f}",
                 "Cost": "${:,.2f}",
                 "CPA": "${:,.2f}",
                 "AOV": "${:,.2f}",
                 "Revenue": "${:,.2f}",
-                "CTR": "{:,.2f}%",
-                "Conv. Rate": "{:,.2f}%",
-                "ROAS": "{:,.2f}x",
-                "Conversions": "{:,.1f}"
+                "CTR": "{:.2f}%",
+                "Conv. Rate": "{:.2f}%",
+                "ROAS": "{:.2f}x",
+                "Conversions": "{:.0f}"
             }
             
             st.dataframe(df_sorted.style.format({k: v for k, v in format_dict.items() if k in df_sorted.columns}), 
