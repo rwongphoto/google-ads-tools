@@ -219,9 +219,18 @@ def google_ads_search_term_analyzer():
             # N-gram Analysis
             st.subheader("📝 N-gram Analysis")
             
+            st.info("""
+            **N-gram methods:**
+            - **Contiguous n-grams**: Consecutive words (e.g., "manchester united jersey")
+            - **Skip-grams**: Words with gaps (e.g., "manchester jersey", "united jersey") - slower but finds more patterns
+            """)
+            
             extraction_method = st.radio("Select N-gram Extraction Method:", 
                                         options=["Contiguous n-grams", "Skip-grams"], 
                                         index=0)
+            
+            if extraction_method == "Skip-grams":
+                st.warning("⚠️ Skip-grams may take 30-60 seconds to process large datasets")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -240,26 +249,69 @@ def google_ads_search_term_analyzer():
                 ngrams_list = list(nltk.ngrams(tokens, n))
                 return [" ".join(gram) for gram in ngrams_list]
 
-            def extract_skipgrams(text, n):
+            def extract_skipgrams(text, n, max_skip=2):
                 import itertools
                 text = str(text).lower()
                 tokens = word_tokenize(text)
                 tokens = [lemmatizer.lemmatize(t) for t in tokens if t.isalnum() and t not in stop_words]
-                if len(tokens) < n:
+                
+                # Limit token length to prevent exponential explosion
+                if len(tokens) < n or len(tokens) > 15:
                     return []
+                
                 skipgrams_list = []
-                for combo in itertools.combinations(range(len(tokens)), n):
-                    skipgram = " ".join(tokens[i] for i in combo)
-                    skipgrams_list.append(skipgram)
-                return skipgrams_list
+                # Use limited skip-grams instead of all combinations
+                # This generates n-grams with gaps up to max_skip between words
+                for i in range(len(tokens) - n + 1):
+                    # Generate skip-grams starting from position i
+                    indices = [i]
+                    for j in range(1, n):
+                        # Allow skipping up to max_skip tokens
+                        for skip in range(1, max_skip + 2):
+                            next_idx = indices[-1] + skip
+                            if next_idx < len(tokens):
+                                current_indices = indices + [next_idx]
+                                if len(current_indices) == n:
+                                    skipgram = " ".join(tokens[idx] for idx in current_indices)
+                                    if skipgram not in skipgrams_list:
+                                        skipgrams_list.append(skipgram)
+                                        break
+                
+                return skipgrams_list[:100]  # Limit to 100 skip-grams per term
 
             # Extract n-grams
-            all_ngrams = []
-            for term in filtered_df["Search term"]:
-                if extraction_method == "Contiguous n-grams":
-                    all_ngrams.extend(extract_ngrams(term, n_value))
+            try:
+                all_ngrams = []
+                
+                # Show progress for large datasets
+                if len(filtered_df) > 1000:
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    for idx, term in enumerate(filtered_df["Search term"]):
+                        if extraction_method == "Contiguous n-grams":
+                            all_ngrams.extend(extract_ngrams(term, n_value))
+                        else:
+                            all_ngrams.extend(extract_skipgrams(term, n_value))
+                        
+                        # Update progress every 100 rows
+                        if idx % 100 == 0:
+                            progress = (idx + 1) / len(filtered_df)
+                            progress_bar.progress(progress)
+                            status_text.text(f"Processing: {idx + 1:,} / {len(filtered_df):,} search terms")
+                    
+                    progress_bar.empty()
+                    status_text.empty()
                 else:
-                    all_ngrams.extend(extract_skipgrams(term, n_value))
+                    for term in filtered_df["Search term"]:
+                        if extraction_method == "Contiguous n-grams":
+                            all_ngrams.extend(extract_ngrams(term, n_value))
+                        else:
+                            all_ngrams.extend(extract_skipgrams(term, n_value))
+            except Exception as e:
+                st.error(f"Error during n-gram extraction: {str(e)}")
+                st.info("Try using 'Contiguous n-grams' instead, or reduce your dataset size with filters.")
+                return
 
             ngram_counts = Counter(all_ngrams)
             filtered_ngrams = {ngram: count for ngram, count in ngram_counts.items() if count >= min_frequency}
